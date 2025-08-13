@@ -1,0 +1,249 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>🧭 BoatNavigator </title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet"
+    href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+  <style>
+    html, body, #map { height: 100%; margin: 0; }
+    .panel{ position:absolute; top:10px; right:10px; background:#fff; padding:8px; z-index:1000; border-radius:6px; box-shadow:0 2px 8px rgba(0,0,0,.2);}
+    .out{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; white-space:pre-wrap; max-width:320px;}
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<div class="panel">
+  <div>Départ <input id="start" type="datetime-local"/></div>
+  <div>Vitesse base (kn) <input id="v0" type="number" value="10" step="0.1"></div>
+  <div>Conso moyenne (L/h) <input id="lph" type="number" value="5" step="0.1"></div>
+
+  <div style="margin-top:6px">
+    <label><input type="checkbox" id="useWind" checked> Vent</label>
+    <label style="margin-left:8px"><input type="checkbox" id="useWaves" checked> Vagues</label>
+    <label style="margin-left:8px"><input type="checkbox" id="compare"> Comparer (avec vs sans)</label>
+  </div>
+
+  <button id="calc" style="margin-top:6px">Calculer conso</button>
+  <div class="out" id="out"></div>
+
+  <button id="exportGPX" style="margin-top:6px">Export GPX</button>
+  <button id="exportPDF" style="margin-top:6px">Export PDF</button>
+    <!-- Météo sans clé -->
+  <div style="margin-top:6px">
+    <label><input type="checkbox" id="wxToggle"> Pluie (RainViewer)</label>
+    <input id="wxSlider" type="range" min="0" max="0" step="1" value="0" disabled>
+    <span id="wxTime">—</span>
+  </div>
+ 
+
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script>
+const map = L.map('map').setView([47.6, -2.9], 10);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  {attribution:'© OpenStreetMap'}).addTo(map);
+
+// Dessin de la route
+const drawnItems = new L.FeatureGroup().addTo(map);
+const drawControl = new L.Control.Draw({
+  draw: {
+    polyline: { shapeOptions:{weight:4} },
+    polygon: false, rectangle: false, circle: false, marker: false, circlemarker:false
+  }, edit: { featureGroup: drawnItems }
+});
+map.addControl(drawControl);
+
+let routeLine = null;
+map.on(L.Draw.Event.CREATED, e => {
+  if (routeLine) drawnItems.removeLayer(routeLine);
+  routeLine = e.layer;
+  drawnItems.addLayer(routeLine);
+});
+
+function bboxOfLine(line){
+  const coords = line.getLatLngs();
+  let minx= 180, maxx=-180, miny= 90, maxy=-90;
+  coords.forEach(p=>{
+    minx = Math.min(minx, p.lng); maxx = Math.max(maxx, p.lng);
+    miny = Math.min(miny, p.lat); maxy = Math.max(maxy, p.lat);
+  });
+  return [minx,miny,maxx,maxy];
+}
+
+document.getElementById('calc').onclick = async ()=>{
+  if(!routeLine){ alert('Tracez une route (polyline)'); return; }
+
+  const startVal = document.getElementById('start').value || new Date().toISOString().slice(0,16);
+  const payload = {
+    start_iso: new Date(startVal).toISOString(),
+    base_speed_kn: parseFloat(document.getElementById('v0').value),
+    lph: parseFloat(document.getElementById('lph').value),
+    model: { Uref:10, Href:1, alpha:0.08, beta:0.10, gamma:0.15, delta:0.10 },
+    use_wind: document.getElementById('useWind').checked,
+    use_waves: document.getElementById('useWaves').checked,
+    mode: document.getElementById('compare').checked ? 'both' : 'corrected',
+    route: routeLine.toGeoJSON().geometry
+  };
+
+  const r = await fetch('/api/consumption', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const res = await r.json();
+
+  function fmt(s){ return `Distance: ${(s.distance_km).toFixed(1)} km
+Temps: ${s.time_h.toFixed(2)} h
+Conso: ${s.liters.toFixed(1)} L`; }
+
+  let txt = '';
+  if(res.baseline && res.corrected){
+    txt = `— Baseline (sans vent/vagues) —
+${fmt(res.baseline)}
+
+— Corrigé (options actuelles) —
+${fmt(res.corrected)}
+
+Δ (corrigé - baseline)
+Temps: ${res.delta.time_h>=0?'+':''}${res.delta.time_h.toFixed(2)} h
+Conso: ${res.delta.liters>=0?'+':''}${res.delta.liters.toFixed(1)} L`;
+  } else if(res.corrected){
+    txt = fmt(res.corrected);
+  } else if(res.baseline){
+    txt = fmt(res.baseline);
+  }
+  document.getElementById('out').textContent = txt;
+};
+async function downloadBlob(url, payload, filename){
+  const r = await fetch(url, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+  if(!r.ok){ alert('Export: erreur serveur'); return; }
+  const blob = await r.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
+
+function buildPayload(){
+  if(!routeLine){ alert('Tracez une route'); return null; }
+  const startVal = document.getElementById('start').value || new Date().toISOString().slice(0,16);
+  return {
+    start_iso: new Date(startVal).toISOString(),
+    base_speed_kn: parseFloat(document.getElementById('v0').value),
+    lph: parseFloat(document.getElementById('lph').value),
+    model: { Uref:10, Href:1, alpha:0.08, beta:0.10, gamma:0.15, delta:0.10 },
+    use_wind: document.getElementById('useWind') ? document.getElementById('useWind').checked : true,
+    use_waves: document.getElementById('useWaves') ? document.getElementById('useWaves').checked : true,
+    route: routeLine.toGeoJSON().geometry
+  };
+}
+
+document.getElementById('exportGPX').onclick = async ()=>{
+  const payload = buildPayload(); if(!payload) return;
+  await downloadBlob('/export/gpx', payload, 'navigation.gpx');
+};
+document.getElementById('exportPDF').onclick = async ()=>{
+  const payload = buildPayload(); if(!payload) return;
+  await downloadBlob('/export/pdf', payload, 'navigation.pdf');
+};
+
+  // ====== Radar pluie (RainViewer) — prévision nowcast + slider temps
+    const wxToggle = document.getElementById('wxToggle');
+    const wxSlider = document.getElementById('wxSlider');
+    const wxTime   = document.getElementById('wxTime');
+
+    let rvFrames = [];           // frames disponibles (objets API RainViewer)
+    let rvLayers = [];           // Leaflet TileLayers cacheés par index
+    let rvIndex  = 0;            // index courant
+    let rvLoaded = false;        // avons-nous chargé les frames ?
+
+    function formatLocalTime(ts){ // ts en secondes
+      const d = new Date(ts * 1000);
+      // Affiche en heure locale courte (ex: 14:30)
+      return d.toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'});
+    }
+
+    async function loadRainViewer(){
+      // API publique : frames passées & nowcast
+      const url = 'https://api.rainviewer.com/public/weather-maps.json';
+      const r = await fetch(url);
+      if (!r.ok) throw new Error('RainViewer indisponible');
+      const j = await r.json();
+
+      // Combine passé et futur pour plus de frames
+      let frames = [];
+      if (j.radar && j.radar.past) frames = frames.concat(j.radar.past);
+      if (j.radar && j.radar.nowcast) frames = frames.concat(j.radar.nowcast);
+
+        
+      rvFrames = frames;
+      rvLayers = new Array(frames.length);
+      rvIndex = frames.length ? frames.length - 1 : 0; // par défaut la plus récente
+      wxSlider.min = 0;
+      wxSlider.max = Math.max(0, frames.length - 1);
+      wxSlider.value = rvIndex;
+      wxSlider.disabled = frames.length === 0;
+      wxTime.textContent = frames.length ? formatLocalTime(frames[rvIndex].time) : '—';
+      rvLoaded = true;
+    }
+
+    function buildTileLayerFor(frame){
+      // frame.path fourni par l’API. Exemple:
+      // https://tilecache.rainviewer.com + frame.path + '/256/{z}/{x}/{y}/2/1_1.png'
+      const url = `https://tilecache.rainviewer.com${frame.path}/256/{z}/{x}/{y}/2/1_1.png`;
+      return L.tileLayer(url, {
+        tileSize: 256,
+        opacity: 0.6,
+        zIndex: 400,
+        attribution: '&copy; RainViewer'
+      });
+    }
+
+    function showRainLayerAt(index){
+      if (!rvFrames.length) return;
+
+      // retire layer courant si différent
+      for (let i=0;i<rvLayers.length;i++){
+        if (rvLayers[i] && map.hasLayer(rvLayers[i])) map.removeLayer(rvLayers[i]);
+      }
+
+      rvIndex = Math.min(Math.max(index, 0), rvFrames.length - 1);
+      if (!rvLayers[rvIndex]) rvLayers[rvIndex] = buildTileLayerFor(rvFrames[rvIndex]);
+      rvLayers[rvIndex].addTo(map);
+      wxTime.textContent = formatLocalTime(rvFrames[rvIndex].time);
+    }
+
+    wxToggle.addEventListener('change', async () => {
+      if (wxToggle.checked){
+        try{
+          if (!rvLoaded) await loadRainViewer();
+          showRainLayerAt(parseInt(wxSlider.value, 10) || rvIndex);
+        } catch (e){
+          console.warn(e);
+          wxToggle.checked = false;
+          alert("Impossible de charger la carte pluie pour le moment.");
+        }
+      } else {
+        // retire tous les layers
+        rvLayers.forEach(Lyr => { if (Lyr && map.hasLayer(Lyr)) map.removeLayer(Lyr); });
+      }
+    });
+
+    wxSlider.addEventListener('input', () => {
+      if (!rvLoaded || !wxToggle.checked) return;
+      const idx = parseInt(wxSlider.value, 10) || 0;
+      showRainLayerAt(idx);
+    });
+
+</script>
+</body>
+</html>
