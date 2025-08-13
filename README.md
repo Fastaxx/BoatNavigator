@@ -28,7 +28,10 @@
 
 Pour chaque segment $i$ :
 
-$$v_i = v_0\,[1 - \alpha \tfrac{U_{\parallel}}{U_\mathrm{ref}} - \beta \tfrac{H_s}{H_\mathrm{ref}}\cos^2(\theta_\text{houle})]_+,\quadC_i = C_0\,[1 + \gamma \tfrac{\max(U_{\parallel},0)}{U_\mathrm{ref}} + \delta \tfrac{H_s}{H_\mathrm{ref}}]$$
+$$
+v_i = v_0\,[1 - \alpha \tfrac{U_{\parallel}}{U_{\mathrm{ref}}} - \beta \tfrac{H_s}{H_{\mathrm{ref}}} \cos^2(\theta_{\mathrm{houle}})]_+,\quad
+C_i = C_0\,[1 + \gamma \tfrac{\max(U_{\parallel},0)}{U_{\mathrm{ref}}} + \delta \tfrac{H_s}{H_{\mathrm{ref}}}]
+$$
 
 avec $U_{\parallel} = U\cos\theta$ (vent de face positif), et paramètres $\alpha,\beta,\gamma,\delta$ ajustables.
 
