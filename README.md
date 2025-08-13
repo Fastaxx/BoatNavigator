@@ -1,13 +1,13 @@
 # 🚤 BoatNavigator
 
+![Screenshot](docs/screen.png)
+
 **BoatNavigator** est une mini-application **Flask + Leaflet** pour préparer une navigation côtière :
 
 * tracer une **route** sur la carte,
 * estimer **temps** et **consommation** (avec ou sans **vent** et **vagues**),
 * afficher des **tuiles météo** : **pluie (radar)** et **flèches de vent**,
 * **exporter** un **GPX** horodaté et un **PDF** récapitulatif (carte + tableau des segments).
-
-> ⚠️ **Avertissement** : BoatNavigator est un **outil d’aide**. Il **ne remplace pas** les cartes officielles, ECDIS, RNC/ENC, avis aux navigateurs ni l’expérience du chef de bord. Vérifiez toujours vos informations sur des sources officielles et adaptez vos décisions aux conditions réelles.
 
 ---
 
@@ -28,11 +28,7 @@
 
 Pour chaque segment $i$ :
 
-$$
-v_i = v_0\,[1 - \alpha \tfrac{U_{\parallel}}{U_\mathrm{ref}} - \beta \tfrac{H_s}{H_\mathrm{ref}}\cos^2(\theta_\text{houle})]_+,
-\quad
-C_i = C_0\,[1 + \gamma \tfrac{\max(U_{\parallel},0)}{U_\mathrm{ref}} + \delta \tfrac{H_s}{H_\mathrm{ref}}]
-$$
+$$v_i = v_0\,[1 - \alpha \tfrac{U_{\parallel}}{U_\mathrm{ref}} - \beta \tfrac{H_s}{H_\mathrm{ref}}\cos^2(\theta_\text{houle})]_+,\quadC_i = C_0\,[1 + \gamma \tfrac{\max(U_{\parallel},0)}{U_\mathrm{ref}} + \delta \tfrac{H_s}{H_\mathrm{ref}}]$$
 
 avec $U_{\parallel} = U\cos\theta$ (vent de face positif), et paramètres $\alpha,\beta,\gamma,\delta$ ajustables.
 
@@ -166,11 +162,10 @@ curl -X POST http://127.0.0.1:5000/api/windfield \
 * [x] Tuiles pluie (RainViewer) – slider
 * [x] Flèches de vent (Open-Meteo) – slider
 * [x] Exports GPX & PDF
-* [ ] Liste **interactive** des segments dans l’UI (cap/dist/ETA/vitesse/conso)
-* [ ] **Interpolation temporelle** des prévisions (au lieu du snap horaire)
+* [x] Liste **interactive** des segments dans l’UI (cap/dist/ETA/vitesse/conso)
+* [x] **Interpolation temporelle** des prévisions (au lieu du snap horaire)
 * [ ] **Alertes** (seuils vent/houle)
 * [ ] **Sauvegarde/chargement** de routes (localStorage/JSON)
-* [ ] Choix **unités** (NM↔km, L/h↔gal/h)
 * [ ] Cache disque et/ou persistant
 
 

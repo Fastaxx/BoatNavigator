@@ -69,38 +69,79 @@ def hourly_pick_from(json_obj, keys, t_iso):
         out[k] = json_obj["hourly"][k][idx]
     return out
 
+def hourly_interp_from(json_obj, keys_linear, keys_circular, t_iso):
+    """Interpole linéairement (ou circulairement) à l'instant t_iso."""
+    # t_iso peut être tz-aware; les times Open-Meteo avec timezone=auto sont naïfs locaux
+    t_target = parse_iso_z(t_iso).replace(tzinfo=None)
+    ts = [dt.datetime.fromisoformat(x) for x in json_obj["hourly"]["time"]]
+    # bornes
+    if t_target <= ts[0]:
+        i0, i1, w = 0, 0, 0.0
+    elif t_target >= ts[-1]:
+        i0, i1, w = len(ts)-1, len(ts)-1, 0.0
+    else:
+        # trouve l'intervalle [i0, i1] tel que ts[i0] <= t < ts[i1]
+        for i in range(len(ts)-1):
+            if ts[i] <= t_target <= ts[i+1]:
+                i0, i1 = i, i+1
+                dt_tot = (ts[i1]-ts[i0]).total_seconds()
+                w = 0.0 if dt_tot==0 else (t_target - ts[i0]).total_seconds()/dt_tot
+                break
+
+    out = {}
+    # linéaire
+    for k in keys_linear:
+        v0 = float(json_obj["hourly"][k][i0])
+        v1 = float(json_obj["hourly"][k][i1])
+        out[k] = v0*(1-w) + v1*w
+
+    # circulaire (degrés "from")
+    for k in keys_circular:
+        a0 = math.radians(float(json_obj["hourly"][k][i0]))
+        a1 = math.radians(float(json_obj["hourly"][k][i1]))
+        # interpole les composantes de la direction "to" pour éviter le wrap 0/360
+        # (dir_to = dir_from + 180)
+        to0 = (math.degrees(a0)+180.0) % 360.0
+        to1 = (math.degrees(a1)+180.0) % 360.0
+        u0, v0 = math.cos(math.radians(to0)), math.sin(math.radians(to0))
+        u1, v1 = math.cos(math.radians(to1)), math.sin(math.radians(to1))
+        u = u0*(1-w) + u1*w
+        v = v0*(1-w) + v1*w
+        to = (math.degrees(math.atan2(v, u)) + 360.0) % 360.0
+        fr = (to + 180.0) % 360.0
+        out[k] = fr
+    return out
+
+
 
 def fetch_wind(lat, lon, start_iso):
-    # Weather API -> vent 10m en nœuds
     t0 = parse_iso_z(start_iso)
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": lat, "longitude": lon,
         "start_date": t0.date().isoformat(),
-        "end_date": t0.date().isoformat(),
+        "end_date": (t0 + dt.timedelta(hours=2)).date().isoformat(),  # couvre h+1 même si minuit
         "hourly": "wind_speed_10m,wind_direction_10m",
         "windspeed_unit": "kn",
         "timezone": "auto"
     }
-    r = requests.get(url, params=params, timeout=20)
-    r.raise_for_status()
+    r = requests.get(url, params=params, timeout=20); r.raise_for_status()
     return r.json()
 
 def fetch_waves(lat, lon, start_iso):
-    # Marine API -> vagues
     t0 = parse_iso_z(start_iso)
     url = "https://marine-api.open-meteo.com/v1/marine"
     params = {
         "latitude": lat, "longitude": lon,
         "start_date": t0.date().isoformat(),
-        "end_date": t0.date().isoformat(),
+        "end_date": (t0 + dt.timedelta(hours=2)).date().isoformat(),
         "hourly": "wave_height,wave_direction",
         "timezone": "auto",
-        "cell_selection": "sea"  # utile près des côtes
+        "cell_selection": "sea"
     }
-    r = requests.get(url, params=params, timeout=20)
-    r.raise_for_status()
+    r = requests.get(url, params=params, timeout=20); r.raise_for_status()
     return r.json()
+
 
 
 def hourly_pick(fx, t_iso):
@@ -129,7 +170,13 @@ def get_met_at(mid_lat, mid_lon, t_iso, use_wind, use_waves):
 def segment_eval(p1, p2, cap, d_m, t0_iso, v0_kn, C0_lph, pars, use_wind, use_waves):
     """Retourne vitesse, dt, litres pour 1 segment, selon options vent/vagues."""
     mid = ((p1[0]+p2[0])/2, (p1[1]+p2[1])/2)
-    met = get_met_at(mid[0], mid[1], t0_iso, use_wind, use_waves)
+    met = {}
+    if use_wind:
+        w = fetch_wind(mid[0], mid[1], t0_iso)
+        met |= hourly_interp_from(w, ["wind_speed_10m"], ["wind_direction_10m"], t0_iso)
+    if use_waves:
+        v = fetch_waves(mid[0], mid[1], t0_iso)
+        met |= hourly_interp_from(v, ["wave_height"], ["wave_direction"], t0_iso)
 
     # Valeurs par défaut si non demandées
     U = float(met.get("wind_speed_10m", 0.0))
@@ -438,6 +485,6 @@ def export_pdf():
     doc.build(story)
     pdf_buf.seek(0)
     return send_file(pdf_buf, mimetype="application/pdf", as_attachment=True, download_name="navigation.pdf")
-    
+
 if __name__ == "__main__":
     app.run(debug=True)

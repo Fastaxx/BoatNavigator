@@ -2,46 +2,183 @@
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>🧭 BoatNavigator </title>
+  <title>🧭 BoatNavigator</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <link rel="stylesheet"
-    href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+
   <style>
-    html, body, #map { height: 100%; margin: 0; }
-    .panel{ position:absolute; top:10px; right:10px; background:#fff; padding:8px; z-index:1000; border-radius:6px; box-shadow:0 2px 8px rgba(0,0,0,.2);}
-    .out{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; white-space:pre-wrap; max-width:320px;}
+    :root{
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --accent: #0ea5e9;       /* cyan-500 */
+      --accent-600: #0284c7;
+      --shadow: 0 8px 24px rgba(0,0,0,.12);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji","Segoe UI Emoji";
+    }
+    @media (prefers-color-scheme: dark){
+      :root{
+        --bg: #0b1220;
+        --panel: #0f172a;       /* slate-900 */
+        --text: #e5e7eb;
+        --muted: #94a3b8;
+        --border: #1f2937;
+        --accent: #22d3ee;      /* cyan-400 */
+        --accent-600: #06b6d4;
+        --shadow: 0 10px 28px rgba(0,0,0,.45);
+      }
+    }
+
+    html, body, #map { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); }
+    a { color: var(--accent); }
+
+    /* Panel */
+    .panel{
+      position:absolute; top:12px; right:12px; width: min(480px, 92vw);
+      background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+      box-shadow: var(--shadow); z-index:1000; overflow: hidden;
+    }
+    .panel__header{
+      display:flex; align-items:center; justify-content:space-between;
+      padding:12px 14px; border-bottom:1px solid var(--border);
+      background: linear-gradient(180deg, rgba(2,132,199,.08), transparent);
+    }
+    .title{ font-weight:700; letter-spacing:.2px; }
+    .subtitle{ color:var(--muted); font-size:12px; }
+
+    .panel__body{ padding:12px 14px 10px; display:grid; gap:10px; }
+    .section-title{ font-weight:600; margin-top:4px; color: var(--text); }
+
+    /* Fields */
+    .row{ display:grid; grid-template-columns: 1fr auto; gap:8px; align-items:center; }
+    .grid-2{ display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+    .grid-3{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; }
+    label{ font-size:12px; color: var(--muted); display:block; margin-bottom:4px; }
+    input[type="datetime-local"], input[type="number"], input[type="text"], input[type="range"]{
+      width:100%; box-sizing:border-box; padding:8px 10px; border-radius:8px;
+      border:1px solid var(--border); background:transparent; color:var(--text);
+      outline:none;
+    }
+    input[type="range"]{ padding:0; }
+
+    .checks{ display:flex; flex-wrap:wrap; gap:10px; color: var(--text); }
+    .checks label{ display:flex; align-items:center; gap:6px; color:var(--text); font-size:13px; }
+
+    /* Buttons */
+    .actions{ display:flex; gap:8px; flex-wrap:wrap; }
+    .btn{
+      appearance:none; border:none; border-radius:10px; padding:10px 12px; font-weight:600;
+      background: var(--accent); color:#001016; cursor:pointer; transition: transform .04s ease, opacity .2s;
+    }
+    .btn:hover{ transform: translateY(-1px); }
+    .btn:active{ transform: translateY(0); }
+    .btn.secondary{
+      background: transparent; color: var(--text); border:1px solid var(--border);
+    }
+
+    /* Output block */
+    .out{
+      font-family: var(--mono); font-size:12px; white-space:pre-wrap;
+      border:1px dashed var(--border); border-radius:8px; padding:8px; color: var(--text);
+      background: rgba(14,165,233,.06);
+    }
+
+    /* Segments table */
+    #segContainer { max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+    .seg-table { border-collapse: collapse; width: 100%; font-size: 12px; }
+    .seg-table th, .seg-table td { border-bottom: 1px solid var(--border); padding: 6px 8px; text-align: center; }
+    .seg-table thead th { position: sticky; top: 0; background: rgba(2,132,199,.10); backdrop-filter: blur(2px); }
+    .seg-table tbody tr:nth-child(odd){ background: rgba(148,163,184,.06); }
+    .seg-table tbody tr:hover { background: rgba(34,211,238,.12); cursor: pointer; }
+
+    /* Small helpers */
+    .hr{ height:1px; background: var(--border); margin: 4px 0 2px; }
+    .muted{ color: var(--muted); }
+    .inline{ display:flex; align-items:center; gap:8px; }
   </style>
 </head>
 <body>
-<div id="map"></div>
-<div class="panel">
-  <div>Départ <input id="start" type="datetime-local"/></div>
-  <div>Vitesse base (kn) <input id="v0" type="number" value="10" step="0.1"></div>
-  <div>Conso moyenne (L/h) <input id="lph" type="number" value="5" step="0.1"></div>
+  <div id="map"></div>
 
-  <div style="margin-top:6px">
-    <label><input type="checkbox" id="useWind" checked> Vent</label>
-    <label style="margin-left:8px"><input type="checkbox" id="useWaves" checked> Vagues</label>
-    <label style="margin-left:8px"><input type="checkbox" id="compare"> Comparer (avec vs sans)</label>
+  <div class="panel">
+    <div class="panel__header">
+      <div>
+        <div class="title">🧭 BoatNavigator</div>
+        <div class="subtitle">Planifiez, estimez, exportez</div>
+      </div>
+    </div>
+
+    <div class="panel__body">
+
+      <div class="grid-1">
+        <div class="row">
+          <div>
+            <label>Départ</label>
+            <input id="start" type="datetime-local"/>
+          </div>
+          <div class="inline muted" style="justify-content:flex-end; font-size:12px;">
+            <span id="wxTime" class="muted"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div>
+          <label>Vitesse base (kn)</label>
+          <input id="v0" type="number" value="10" step="0.1">
+        </div>
+        <div>
+          <label>Conso moyenne (L/h)</label>
+          <input id="lph" type="number" value="5" step="0.1">
+        </div>
+      </div>
+
+      <div class="checks">
+        <label><input type="checkbox" id="useWind" checked> Vent</label>
+        <label><input type="checkbox" id="useWaves" checked> Vagues</label>
+        <label><input type="checkbox" id="compare"> Comparer (avec vs sans)</label>
+      </div>
+
+      <div class="actions">
+        <button id="calc" class="btn">Calculer conso</button>
+        <button id="exportGPX" class="btn secondary">Export GPX</button>
+        <button id="exportPDF" class="btn secondary">Export PDF</button>
+      </div>
+
+      <div class="out" id="out">Distance: — km
+Temps: — h
+Conso: — L</div>
+
+      <div class="hr"></div>
+      <div class="section-title">Segments</div>
+      <div id="segContainer">
+        <table class="seg-table" id="segTable">
+          <thead>
+            <tr>
+              <th>#</th><th>Cap (°)</th><th>Dist</th><th>Vitesse (kn)</th>
+              <th>Δt</th><th>Début</th><th>Fin</th><th>Conso (L)</th>
+              <th>Vent</th><th>Houle</th>
+            </tr>
+          </thead>
+          <tbody><!-- rows dynamisées --></tbody>
+        </table>
+      </div>
+
+      <div class="hr"></div>
+      <div class="section-title">Météo</div>
+      <div class="inline" style="gap:12px;">
+        <label class="inline"><input type="checkbox" id="wxToggle"> Pluie (RainViewer)</label>
+        <input id="wxSlider" type="range" min="0" max="0" step="1" value="0" disabled style="flex:1">
+      </div>
+
+    </div>
   </div>
-
-  <button id="calc" style="margin-top:6px">Calculer conso</button>
-  <div class="out" id="out"></div>
-
-  <button id="exportGPX" style="margin-top:6px">Export GPX</button>
-  <button id="exportPDF" style="margin-top:6px">Export PDF</button>
-    <!-- Météo sans clé -->
-  <div style="margin-top:6px">
-    <label><input type="checkbox" id="wxToggle"> Pluie (RainViewer)</label>
-    <input id="wxSlider" type="range" min="0" max="0" step="1" value="0" disabled>
-    <span id="wxTime">—</span>
-  </div>
- 
-
-</div>
-
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script>
@@ -97,6 +234,21 @@ document.getElementById('calc').onclick = async ()=>{
   });
   const res = await r.json();
 
+   // Affiche les totaux
+  const base = res.corrected || res.baseline || res;
+  document.getElementById('out').textContent =
+    `Distance: ${base.distance_km.toFixed(1)} km
+Temps: ${base.time_h.toFixed(2)} h
+Conso: ${base.liters.toFixed(1)} L`;
+
+  // Construit la liste des segments
+  if(base.segments && base.segments.length){
+    buildSegmentsTable(base.segments, payload.start_iso);
+  }else{
+    document.querySelector('#segTable tbody').innerHTML =
+      `<tr><td colspan="8" style="text-align:center;color:#777">Aucun segment</td></tr>`;
+  }
+
   function fmt(s){ return `Distance: ${(s.distance_km).toFixed(1)} km
 Temps: ${s.time_h.toFixed(2)} h
 Conso: ${s.liters.toFixed(1)} L`; }
@@ -119,6 +271,82 @@ Conso: ${res.delta.liters>=0?'+':''}${res.delta.liters.toFixed(1)} L`;
   }
   document.getElementById('out').textContent = txt;
 };
+
+  // ====== Helpers format ======
+  function fmtNM(m){ return (m/1852).toFixed(2) + ' NM'; }
+  function fmtH(h){
+    const s = Math.round(h*3600), hh = Math.floor(s/3600), mm = Math.floor((s%3600)/60);
+    return `${hh}h${String(mm).padStart(2,'0')}`;
+  }
+  function fmtHHMM(d){ return d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}); }
+  function fmtWind(met){
+    if (!met) return '—';
+    const sp = met.wind_speed_10m;
+    const di = met.wind_direction_10m;
+    if (sp == null || di == null) return '—';
+    return `${Number(sp).toFixed(1)} kn / ${Math.round(di)}°`;
+  }
+  function fmtSwell(met){
+    if (!met) return '—';
+    // on prend d’abord la houle si dispo, sinon la vague totale
+    const h = (met.swell_wave_height != null) ? met.swell_wave_height : met.wave_height;
+    const d = (met.swell_wave_direction != null) ? met.swell_wave_direction : met.wave_direction;
+    if (h == null || d == null) return '—';
+    return `${Number(h).toFixed(1)} m / ${Math.round(d)}°`;
+  }
+
+  // ====== Surbrillance de segment sur la carte ======
+  const segHighlight = L.polyline([], {color:'#00BCD4', weight:6, opacity:0.7}).addTo(map);
+  function clearHighlight(){ segHighlight.setLatLngs([]); }
+  function highlightSegment(i){
+    if(!routeLine) return;
+    const pts = routeLine.getLatLngs();
+    if(i<0 || i>=pts.length-1) return;
+    segHighlight.setLatLngs([pts[i], pts[i+1]]).bringToFront();
+  }
+  function zoomToSegment(i){
+    if(!routeLine) return;
+    const pts = routeLine.getLatLngs();
+    if(i<0 || i>=pts.length-1) return;
+    const b = L.latLngBounds([pts[i], pts[i+1]]);
+    map.fitBounds(b.pad(0.5));
+    highlightSegment(i);
+  }
+
+  // ====== Remplissage du tableau des segments ======
+  function buildSegmentsTable(segments, startIso){
+    const tbody = document.querySelector('#segTable tbody');
+    tbody.innerHTML = '';
+    let t = new Date(startIso);
+    segments.forEach((s, idx)=>{
+      const dt_h = s.eta_h;
+      const tEnd = new Date(t.getTime() + dt_h*3600*1000);
+
+      const tr = document.createElement('tr');
+      tr.dataset.index = String(idx);
+      tr.innerHTML = `
+        <td>${idx+1}</td>
+        <td>${Math.round(s.bearing_deg)}</td>
+        <td>${fmtNM(s.distance_m)}</td>
+        <td>${s.speed_kn.toFixed(1)}</td>
+        <td>${fmtH(dt_h)}</td>
+        <td>${fmtHHMM(t)}</td>
+        <td>${fmtHHMM(tEnd)}</td>
+        <td>${s.liters.toFixed(2)}</td>
+        <td>${fmtWind(s.met)}</td>
+        <td>${fmtSwell(s.met)}</td>
+      `;
+      // interactions
+      tr.addEventListener('mouseenter', ()=> highlightSegment(idx));
+      tr.addEventListener('mouseleave', ()=> clearHighlight());
+      tr.addEventListener('click', ()=> zoomToSegment(idx));
+
+      tbody.appendChild(tr);
+      t = tEnd; // avance l'horloge pour le prochain segment
+    });
+  }
+
+
 async function downloadBlob(url, payload, filename){
   const r = await fetch(url, {
     method:'POST', headers:{'Content-Type':'application/json'},
